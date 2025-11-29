@@ -1,0 +1,354 @@
+
+    // 分贝检测核心功能
+    class AudioAnalyzer {
+        constructor() {
+            this.audioContext = null;
+            this.analyser = null;
+            this.microphone = null;
+            this.scriptProcessor = null;
+            this.isRunning = false;
+            this.baseAmplitude = 0.0001;
+            this.calibrationMode = 'none';
+            
+            this.timeDomainData = new Uint8Array(0);
+            this.frequencyData = new Uint8Array(0);
+            this.calibrationSamples = [];
+            this.animationFrameId = null;
+            
+            this.dom = {
+                frequencyValue: document.getElementById('frequencyValue'),
+                dbValue: document.getElementById('dbValue'),
+                startBtn: document.getElementById('startBtn'),
+                calibrateBtn: document.getElementById('calibrateBtn'),
+                status: document.getElementById('status'),
+                oscCanvas: document.getElementById('oscilloscope'),
+                oscCtx: document.getElementById('oscilloscope').getContext('2d'),
+                calibrationOptions: document.getElementById('calibrationOptions'),
+                autoCalibrateBtn: document.getElementById('autoCalibrateBtn'),
+                manualCalibrateBtn: document.getElementById('manualCalibrateBtn'),
+                noCalibrateBtn: document.getElementById('noCalibrateBtn'),
+                manualCalibrationPanel: document.getElementById('manualCalibrationPanel'),
+                measureBtn: document.getElementById('measureBtn'),
+                manualCalibrationStatus: document.getElementById('manualCalibrationStatus'),
+                autoCalibrationPanel: document.getElementById('autoCalibrationPanel'),
+                startAutoCalibrateBtn: document.getElementById('startAutoCalibrateBtn'),
+                autoCalibrationStatus: document.getElementById('autoCalibrationStatus')
+            };
+            
+            this.smoothingFactor = 0.8;
+            this.lastDbValue = 0;
+            this.lastFrequency = 0;
+            
+            this.initEvents();
+        }
+        
+        initEvents() {
+            this.dom.startBtn.addEventListener('click', () => this.toggleMeasurement());
+            this.dom.calibrateBtn.addEventListener('click', () => {
+                this.dom.calibrationOptions.style.display = 'block';
+            });
+            
+            this.dom.autoCalibrateBtn.addEventListener('click', () => {
+                this.calibrationMode = 'auto';
+                this.dom.calibrationOptions.style.display = 'none';
+                this.dom.autoCalibrationPanel.style.display = 'block';
+                this.dom.manualCalibrationPanel.style.display = 'none';
+                this.updateUI();
+            });
+            
+            this.dom.manualCalibrateBtn.addEventListener('click', () => {
+                this.calibrationMode = 'manual';
+                this.dom.calibrationOptions.style.display = 'none';
+                this.dom.manualCalibrationPanel.style.display = 'block';
+                this.dom.autoCalibrationPanel.style.display = 'none';
+                this.updateUI();
+            });
+            
+            this.dom.noCalibrateBtn.addEventListener('click', () => {
+                this.calibrationMode = 'none';
+                this.dom.calibrationOptions.style.display = 'none';
+                this.dom.manualCalibrationPanel.style.display = 'none';
+                this.dom.autoCalibrationPanel.style.display = 'none';
+                this.baseAmplitude = 0.0001;
+                this.dom.status.textContent = '已切换至无校准模式';
+                this.updateUI();
+            });
+            
+            this.dom.measureBtn.addEventListener('click', () => this.startManualCalibration());
+            this.dom.startAutoCalibrateBtn.addEventListener('click', () => this.startAutoCalibration());
+        }
+        
+        async toggleMeasurement() {
+            if (!this.isRunning) {
+                try {
+                    await this.initAudioContext();
+                    this.isRunning = true;
+                    this.dom.startBtn.textContent = '停止测量';
+                    this.dom.calibrateBtn.disabled = false;
+                    this.dom.status.textContent = '测量中...';
+                    this.startVisualization();
+                } catch (error) {
+                    this.dom.status.textContent = `错误: ${error.message}`;
+                    console.error(error);
+                }
+            } else {
+                this.stopMeasurement();
+            }
+        }
+        
+        async initAudioContext() {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                sampleRate: 48000
+            });
+            this.analyser = this.audioContext.createAnalyser();
+            this.analyser.fftSize = 4096;
+            this.analyser.smoothingTimeConstant = 0.5;
+            
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                audio: {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false
+                } 
+            });
+            
+            this.microphone = this.audioContext.createMediaStreamSource(stream);
+            this.microphone.connect(this.analyser);
+            
+            this.scriptProcessor = this.audioContext.createScriptProcessor(2048, 1, 1);
+            this.analyser.connect(this.scriptProcessor);
+            this.scriptProcessor.connect(this.audioContext.destination);
+            this.scriptProcessor.onaudioprocess = () => this.processAudio();
+            
+            this.timeDomainData = new Uint8Array(this.analyser.fftSize);
+            this.frequencyData = new Uint8Array(this.analyser.frequencyBinCount);
+        }
+        
+        stopMeasurement() {
+            cancelAnimationFrame(this.animationFrameId);
+            if (this.scriptProcessor) {
+                this.scriptProcessor.disconnect();
+                this.microphone.disconnect();
+                this.audioContext.close();
+            }
+            this.isRunning = false;
+            this.dom.startBtn.textContent = '启动测量';
+            this.dom.status.textContent = '已停止';
+            this.dom.calibrateBtn.disabled = true;
+            this.dom.oscCtx.clearRect(0, 0, this.dom.oscCanvas.width, this.dom.oscCanvas.height);
+        }
+        
+        processAudio() {
+            this.analyser.getByteTimeDomainData(this.timeDomainData);
+            this.analyser.getByteFrequencyData(this.frequencyData);
+            
+            const rms = this.calculateRms(this.timeDomainData);
+            let db = 20 * Math.log10(Math.max(rms, 0.0001) / this.baseAmplitude);
+            db = this.lastDbValue * this.smoothingFactor + db * (1 - this.smoothingFactor);
+            this.lastDbValue = db;
+            
+            const frequency = this.calculateDominantFrequency();
+            this.lastFrequency = frequency;
+            
+            this.dom.dbValue.textContent = db.toFixed(1) + ' dB';
+            this.dom.frequencyValue.textContent = frequency.toFixed(0) + ' Hz';
+            
+            if (db > 90) {
+                this.dom.dbValue.classList.add('warning');
+            } else {
+                this.dom.dbValue.classList.remove('warning');
+            }
+            
+            if (this.isCalibrating) {
+                this.calibrationSamples.push(rms);
+            }
+        }
+        
+        startManualCalibration() {
+            if (!this.isRunning) return;
+            
+            this.isCalibrating = true;
+            this.calibrationSamples = [];
+            this.dom.measureBtn.disabled = true;
+            this.dom.manualCalibrationStatus.textContent = '测量中...请保持环境安静（3秒）';
+            
+            setTimeout(() => {
+                this.isCalibrating = false;
+                this.dom.measureBtn.disabled = false;
+                
+                if (this.calibrationSamples.length > 0) {
+                    const minRms = Math.min(...this.calibrationSamples);
+                    this.baseAmplitude = minRms;
+                    this.dom.manualCalibrationStatus.textContent = 
+                        `校准完成！基准: ${(20 * Math.log10(this.baseAmplitude)).toFixed(1)} dB`;
+                    this.dom.status.textContent = '手动校准已完成';
+                } else {
+                    this.dom.manualCalibrationStatus.textContent = '测量失败，请重试';
+                }
+            }, 3000);
+        }
+        
+        startAutoCalibration() {
+            if (!this.isRunning) return;
+            
+            this.isCalibrating = true;
+            this.calibrationSamples = [];
+            this.dom.startAutoCalibrateBtn.disabled = true;
+            this.dom.autoCalibrationStatus.textContent = '智能分析中...请保持安静（5秒）';
+            
+            setTimeout(() => {
+                this.isCalibrating = false;
+                this.dom.startAutoCalibrateBtn.disabled = false;
+                
+                if (this.calibrationSamples.length > 0) {
+                    const sorted = [...this.calibrationSamples].sort((a, b) => a - b);
+                    const percentileIndex = Math.floor(sorted.length * 0.05);
+                    this.baseAmplitude = sorted[percentileIndex];
+                    
+                    this.dom.autoCalibrationStatus.textContent = 
+                        `校准完成！基准: ${(20 * Math.log10(this.baseAmplitude)).toFixed(1)} dB`;
+                    this.dom.status.textContent = '自动校准已完成';
+                } else {
+                    this.dom.autoCalibrationStatus.textContent = '校准失败，请重试';
+                }
+            }, 5000);
+        }
+        
+        calculateRms(buffer) {
+            let sum = 0;
+            for (let i = 0; i < buffer.length; i++) {
+                const normalized = (buffer[i] - 128) / 128;
+                sum += normalized * normalized;
+            }
+            return Math.sqrt(sum / buffer.length);
+        }
+        
+        calculateDominantFrequency() {
+            let maxIndex = 0;
+            let maxValue = 0;
+            
+            // 找出频谱中的峰值
+            for (let i = 0; i < this.frequencyData.length; i++) {
+                if (this.frequencyData[i] > maxValue) {
+                    maxValue = this.frequencyData[i];
+                    maxIndex = i;
+                }
+            }
+            
+            // 二次插值细化
+            if (maxIndex > 0 && maxIndex < this.frequencyData.length - 1) {
+                const y0 = this.frequencyData[maxIndex - 1];
+                const y1 = this.frequencyData[maxIndex];
+                const y2 = this.frequencyData[maxIndex + 1];
+                
+                // 二次插值公式
+                const delta = 0.5 * (y2 - y0) / (2 * y1 - y0 - y2);
+                maxIndex += delta;
+            }
+            
+            return maxIndex * this.audioContext.sampleRate / this.analyser.fftSize;
+        }
+        
+        startVisualization() {
+            this.adjustCanvasResolution();
+            
+            const draw = () => {
+                if (!this.isRunning) return;
+                
+                this.animationFrameId = requestAnimationFrame(draw);
+                this.drawOscilloscope();
+            };
+            
+            draw();
+        }
+        
+        drawOscilloscope() {
+            const width = this.dom.oscCanvas.width;
+            const height = this.dom.oscCanvas.height;
+            const ctx = this.dom.oscCtx;
+            
+            ctx.clearRect(0, 0, width, height);
+            
+            ctx.strokeStyle = 'rgba(100, 100, 150, 0.2)';
+            ctx.lineWidth = 1;
+            
+            for (let y = 0; y <= height; y += height / 4) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(width, y);
+                ctx.stroke();
+            }
+            
+            for (let x = 0; x <= width; x += width / 8) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, height);
+                ctx.stroke();
+            }
+            
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#3b82f6';
+            ctx.beginPath();
+            
+            const sliceWidth = width / this.timeDomainData.length;
+            let x = 0;
+            
+            for (let i = 0; i < this.timeDomainData.length; i++) {
+                const v = this.timeDomainData[i] / 128.0;
+                const y = v * height / 1.5;
+                
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+                
+                x += sliceWidth;
+            }
+            
+            ctx.stroke();
+            
+            if (this.lastFrequency > 0) {
+                const freqX = (this.lastFrequency / (this.audioContext.sampleRate / 2)) * width;
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+                ctx.setLineDash([5, 5]);
+                ctx.beginPath();
+                ctx.moveTo(freqX, 0);
+                ctx.lineTo(freqX, height);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+        }
+        
+        adjustCanvasResolution() {
+            const canvas = this.dom.oscCanvas;
+            const width = canvas.clientWidth;
+            const height = canvas.clientHeight;
+            
+            if (canvas.width !== width || canvas.height !== height) {
+                canvas.width = width;
+                canvas.height = height;
+            }
+        }
+        
+        updateUI() {
+            this.dom.calibrateBtn.disabled = !this.isRunning;
+        }
+    }
+    
+    // 初始化检测仪
+    document.addEventListener('DOMContentLoaded', () => {
+        const analyzer = new AudioAnalyzer();
+        
+        document.addEventListener('click', () => {
+            if (analyzer.audioContext && analyzer.audioContext.state === 'suspended') {
+                analyzer.audioContext.resume();
+            }
+        }, { once: true });
+        
+        window.addEventListener('resize', () => {
+            if (analyzer.isRunning) {
+                analyzer.adjustCanvasResolution();
+            }
+        });
+    });

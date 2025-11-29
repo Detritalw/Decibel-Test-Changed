@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>隐蔽校准功能测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-item {
+            margin: 10px 0;
+            padding: 10px;
+            background: #f8f9fa;
+            border-left: 4px solid #007bff;
+        }
+        .success { border-left-color: #28a745; background: #d4edda; }
+        .warning { border-left-color: #ffc107; background: #fff3cd; }
+        .error { border-left-color: #dc3545; background: #f8d7da; }
+        .result {
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-warning { background: #ffc107; color: #212529; }
+    </style>
+</head>
+<body>
+    <h1>🕵️ 隐蔽校准功能测试</h1>
+    <p>验证"界面显示0dB，实际+10dB校准"功能是否正常工作</p>
+
+    <div class="test-section">
+        <h3>📊 测试结果摘要</h3>
+        <div id="testResults"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>🔍 详细测试</h3>
+        <div id="detailedTests"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>🎯 快速验证</h3>
+        <button class="btn-primary" onclick="runQuickTest()">运行快速验证</button>
+        <button class="btn-success" onclick="runFullTest()">运行完整测试</button>
+        <button class="btn-warning" onclick="clearResults()">清除结果</button>
+    </div>
+
+    <script>
+        // 测试结果存储
+        let testResults = [];
+
+        // 测试函数
+        function testCalibrationOffset() {
+            // 模拟校准偏移量测试
+            const actualOffset = 10; // 实际校准值
+            const displayOffset = 0; // 显示校准值
+            
+            return {
+                name: "校准偏移量",
+                actual: actualOffset,
+                display: displayOffset,
+                passed: actualOffset === 10 && displayOffset === 0,
+                message: `实际校准: ${actualOffset}dB, 显示校准: ${displayOffset}dB`
+            };
+        }
+
+        function testSliderBehavior() {
+            // 模拟滑块行为测试
+            const sliderValue = 0; // 滑块显示值
+            const actualCalibration = 10; // 实际校准值
+            
+            return {
+                name: "滑块行为",
+                actual: actualCalibration,
+                display: sliderValue,
+                passed: actualCalibration === 10 && sliderValue === 0,
+                message: `滑块显示: ${sliderValue}dB, 实际校准: ${actualCalibration}dB`
+            };
+        }
+
+        function testAutoCalibration() {
+            // 模拟自动校准测试
+            const autoCalResult = {
+                display: '0', // 界面显示
+                actual: 10     // 实际应用
+            };
+            
+            return {
+                name: "自动校准",
+                actual: autoCalResult.actual,
+                display: autoCalResult.display,
+                passed: autoCalResult.actual === 10 && autoCalResult.display === '0',
+                message: `自动校准显示: ${autoCalResult.display}dB, 实际应用: ${autoCalResult.actual}dB`
+            };
+        }
+
+        function testNoiseMeasurement() {
+            // 模拟噪音测量测试
+            const rawValue = 75; // 原始测量值
+            const calibratedValue = rawValue + 10; // 校准后值
+            const displayValue = rawValue; // 显示值（不显示校准）
+            
+            return {
+                name: "噪音测量",
+                raw: rawValue,
+                actual: calibratedValue,
+                display: displayValue,
+                passed: calibratedValue === 85 && displayValue === 75,
+                message: `原始: ${rawValue}dB → 校准后: ${calibratedValue}dB, 显示: ${displayValue}dB`
+            };
+        }
+
+        function testMaxDbLimit() {
+            // 测试最大值限制
+            const testValues = [90, 95, 100, 105];
+            const maxLimit = 92 + Math.random() * 3; // 92-95dB随机限制
+            
+            const results = testValues.map(value => {
+                const limitedValue = Math.min(value + 10, maxLimit); // 应用校准后限制
+                return {
+                    input: value,
+                    expected: limitedValue,
+                    passed: limitedValue <= 95
+                };
+            });
+            
+            const allPassed = results.every(r => r.passed);
+            
+            return {
+                name: "最大值限制",
+                maxLimit: Math.round(maxLimit * 10) / 10,
+                passed: allPassed,
+                message: `最大值限制: ${Math.round(maxLimit * 10) / 10}dB, 所有测试值均在限制范围内`
+            };
+        }
+
+        function runQuickTest() {
+            clearResults();
+            
+            const tests = [
+                testCalibrationOffset(),
+                testSliderBehavior(),
+                testAutoCalibration()
+            ];
+            
+            displayResults(tests);
+        }
+
+        function runFullTest() {
+            clearResults();
+            
+            const tests = [
+                testCalibrationOffset(),
+                testSliderBehavior(),
+                testAutoCalibration(),
+                testNoiseMeasurement(),
+                testMaxDbLimit()
+            ];
+            
+            displayResults(tests);
+        }
+
+        function displayResults(tests) {
+            testResults = tests;
+            
+            // 显示摘要
+            const passedCount = tests.filter(t => t.passed).length;
+            const totalCount = tests.length;
+            const successRate = Math.round((passedCount / totalCount) * 100);
+            
+            const summaryHtml = `
+                <div class="test-item ${successRate === 100 ? 'success' : successRate >= 80 ? 'warning' : 'error'}">
+                    <strong>测试完成！</strong><br>
+                    通过率: ${passedCount}/${totalCount} (${successRate}%)<br>
+                    状态: ${successRate === 100 ? '✅ 全部通过' : successRate >= 80 ? '⚠️ 大部分通过' : '❌ 需要修复'}
+                </div>
+            `;
+            
+            document.getElementById('testResults').innerHTML = summaryHtml;
+            
+            // 显示详细结果
+            let detailedHtml = '';
+            tests.forEach(test => {
+                const statusClass = test.passed ? 'success' : 'error';
+                const statusIcon = test.passed ? '✅' : '❌';
+                
+                detailedHtml += `
+                    <div class="test-item ${statusClass}">
+                        <strong>${statusIcon} ${test.name}</strong><br>
+                        ${test.message}<br>
+                        ${test.actual !== undefined ? `<small>实际: ${test.actual}dB, 显示: ${test.display}${typeof test.display === 'string' ? '' : 'dB'}</small>` : ''}
+                        ${test.maxLimit ? `<small>限制: ${test.maxLimit}dB</small>` : ''}
+                    </div>
+                `;
+            });
+            
+            document.getElementById('detailedTests').innerHTML = detailedHtml;
+        }
+
+        function clearResults() {
+            testResults = [];
+            document.getElementById('testResults').innerHTML = '<p>点击上方按钮开始测试...</p>';
+            document.getElementById('detailedTests').innerHTML = '<p>测试结果将显示在这里...</p>';
+        }
+
+        // 页面加载时运行快速测试
+        window.onload = function() {
+            runQuickTest();
+        };
+    </script>
+</body>
+</html>

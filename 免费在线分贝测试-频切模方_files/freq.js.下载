@@ -1,0 +1,114 @@
+﻿   // 初始化函数
+    function init() {
+      setupHamburgerMenu();
+      setupNavInteractions();
+      setupCardInteractions();
+      handleImageLoading();
+    }
+
+    // 汉堡菜单功能
+    function setupHamburgerMenu() {
+      const hamburger = document.getElementById('hamburger');
+      const navMenu = document.getElementById('navMenu');
+      
+      hamburger.addEventListener('click', () => {
+        navMenu.classList.toggle('active');
+        hamburger.classList.toggle('active');
+      });
+    }
+
+    // 导航交互效果
+    function setupNavInteractions() {
+      const navItems = document.querySelectorAll('.nav-item');
+      
+      navItems.forEach(item => {
+        // 鼠标悬停效果
+        item.addEventListener('mouseenter', function() {
+          if (window.innerWidth > 768) {
+            this.style.transform = 'translateY(-3px)';
+            this.style.boxShadow = '0 5px 15px rgba(0, 0, 0, 0.1)';
+          }
+        });
+        
+        item.addEventListener('mouseleave', function() {
+          if (window.innerWidth > 768 && !this.classList.contains('active')) {
+            this.style.transform = '';
+            this.style.boxShadow = '';
+          }
+        });
+        
+        // 点击效果
+        item.addEventListener('click', function() {
+          // 移除所有active类
+          navItems.forEach(navItem => {
+            navItem.classList.remove('active');
+            navItem.style.transform = '';
+            navItem.style.boxShadow = '';
+          });
+          
+          // 添加active类到当前项
+          this.classList.add('active');
+          this.style.transform = 'translateY(-2px)';
+          this.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.1)';
+          
+          // 移动端点击后关闭菜单
+          if (window.innerWidth <= 768) {
+            document.getElementById('navMenu').classList.remove('active');
+            document.getElementById('hamburger').classList.remove('active');
+          }
+        });
+      });
+    }
+
+    // 卡片交互效果
+    function setupCardInteractions() {
+      const cards = document.querySelectorAll('.card');
+      
+      cards.forEach(card => {
+        card.addEventListener('mousedown', () => {
+          card.style.transform = 'scale(0.97)';
+        });
+        
+        card.addEventListener('mouseup', () => {
+          card.style.transform = '';
+        });
+        
+        card.addEventListener('mouseleave', () => {
+          card.style.transform = '';
+        });
+      });
+    }
+
+    // 图片加载处理
+    function handleImageLoading() {
+      const cardImages = document.querySelectorAll('.card-img img');
+      
+      cardImages.forEach(img => {
+        if (img.complete) {
+          img.classList.add('loaded');
+        } else {
+          img.addEventListener('load', function() {
+            this.classList.add('loaded');
+          });
+          
+          img.addEventListener('error', function() {
+            console.log('图片加载失败:', this.src);
+            this.style.opacity = 1;
+          });
+        }
+      });
+    }
+
+    // 窗口大小变化处理
+    window.addEventListener('resize', function() {
+      if (window.innerWidth > 768) {
+        const navMenu = document.getElementById('navMenu');
+        const hamburger = document.getElementById('hamburger');
+        navMenu.classList.remove('active');
+        hamburger.classList.remove('active');
+      }
+    });
+
+    // 页面加载完成后初始化
+    document.querySelector('.logo-text').classList.add('show');
+    document.addEventListener('DOMContentLoaded', init);
